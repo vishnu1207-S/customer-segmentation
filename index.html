@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Customer Segmentation Dashboard | K-Means Clustering</title>
+  <meta name="description" content="Interactive Customer Segmentation Dashboard — manually add customers and re-cluster live with K-Means." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deep:  #0d0d1a;
+      --bg-card:  #141428;
+      --border:   rgba(255,255,255,.08);
+      --accent:   #e94560;
+      --accent2:  #4ecdc4;
+      --accent3:  #f7dc6f;
+      --text:     #e8e8f0;
+      --dim:      #7777aa;
+      --success:  #2ecc71;
+      --warn:     #f39c12;
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-deep);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated grid bg */
+    body::before {
+      content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: linear-gradient(rgba(233,69,96,.035) 1px,transparent 1px),
+                  linear-gradient(90deg,rgba(233,69,96,.035) 1px,transparent 1px);
+      background-size: 60px 60px;
+      animation: gridMove 20s linear infinite;
+    }
+    @keyframes gridMove { 0%{background-position:0 0} 100%{background-position:60px 60px} }
+
+    /* ── NAV TABS ─────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,13,26,.92);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 62px;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: .75rem;
+    }
+    .nav-logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg,var(--accent),#ff9a8b);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+      box-shadow: 0 0 20px rgba(233,69,96,.45);
+      animation: pulse 3s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100%{box-shadow:0 0 20px rgba(233,69,96,.4)}
+      50%{box-shadow:0 0 36px rgba(233,69,96,.75)}
+    }
+    .nav-brand h1 { font-size: 1rem; font-weight: 800;
+      background: linear-gradient(135deg,#fff 40%,var(--accent));
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    }
+    .nav-brand p { font-size:.72rem; color:var(--dim); }
+
+    .tab-list { display:flex; gap:.25rem; }
+    .tab-btn {
+      padding:.45rem 1rem; border-radius:8px; border:none;
+      background:transparent; color:var(--dim); font-family:inherit;
+      font-size:.82rem; font-weight:600; cursor:pointer;
+      transition:all .2s;
+    }
+    .tab-btn:hover { color:var(--text); background:rgba(255,255,255,.06); }
+    .tab-btn.active {
+      background:rgba(233,69,96,.15); color:var(--accent);
+      border: 1px solid rgba(233,69,96,.3);
+    }
+    .nav-badges { display:flex; gap:.5rem; }
+    .badge {
+      padding:.3rem .7rem; border-radius:20px; font-size:.7rem; font-weight:700;
+      display:inline-flex; align-items:center; gap:.35rem;
+    }
+    .badge-green  { background:rgba(78,205,196,.12); color:var(--accent2); border:1px solid rgba(78,205,196,.25); }
+    .badge-red    { background:rgba(233,69,96,.12);  color:var(--accent);  border:1px solid rgba(233,69,96,.25); }
+    .badge-yellow { background:rgba(247,220,111,.12);color:var(--accent3); border:1px solid rgba(247,220,111,.25);}
+
+    /* ── TAB PAGES ────────────────────────────────────────── */
+    .page { display:none; }
+    .page.active { display:block; }
+
+    /* ── MAIN LAYOUT ──────────────────────────────────────── */
+    main {
+      position:relative; z-index:5;
+      max-width:1400px; margin:0 auto;
+      padding:1.75rem 1.5rem 4rem;
+    }
+
+    /* ── KPI CARDS ────────────────────────────────────────── */
+    .kpi-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(185px,1fr));
+      gap:1rem; margin-bottom:2rem;
+    }
+    .kpi-card {
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:16px; padding:1.2rem 1.4rem;
+      display:flex; align-items:center; gap:.9rem;
+      transition:transform .2s,box-shadow .2s; cursor:default;
+    }
+    .kpi-card:hover { transform:translateY(-4px); box-shadow:0 12px 32px rgba(0,0,0,.4); }
+    .kpi-icon {
+      width:44px; height:44px; border-radius:12px; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center; font-size:1.3rem;
+    }
+    .kpi-value { font-size:1.6rem; font-weight:800; line-height:1; }
+    .kpi-label { font-size:.74rem; color:var(--dim); margin-top:.2rem; }
+
+    /* ── SECTION HEADING ──────────────────────────────────── */
+    .sec-title {
+      font-size:1rem; font-weight:700;
+      display:flex; align-items:center; gap:.55rem;
+      margin-bottom:1.2rem;
+    }
+    .sec-title::before {
+      content:''; display:block; width:4px; height:1.15em;
+      background:var(--accent); border-radius:2px;
+    }
+
+    /* ── CHART CARD ───────────────────────────────────────── */
+    .chart-card {
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:18px; padding:1.5rem;
+      transition:box-shadow .2s;
+    }
+    .chart-card:hover { box-shadow:0 8px 32px rgba(0,0,0,.35); }
+    .chart-card h3 { font-size:.88rem; font-weight:600; color:var(--dim); margin-bottom:1.1rem; }
+    canvas { max-height:320px; }
+
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; }
+    .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.2rem; }
+    @media(max-width:900px) { .grid-2,.grid-3{grid-template-columns:1fr;} }
+    .mb { margin-bottom:1.75rem; }
+
+    /* ── CLUSTER SEGMENT CARDS ────────────────────────────── */
+    .cluster-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(255px,1fr));
+      gap:1rem; margin-bottom:1.75rem;
+    }
+    .cl-card {
+      border-radius:16px; padding:1.3rem;
+      border:1px solid var(--border); position:relative; overflow:hidden;
+      transition:transform .2s,box-shadow .2s;
+    }
+    .cl-card:hover { transform:translateY(-4px); box-shadow:0 14px 36px rgba(0,0,0,.5); }
+    .cl-badge {
+      display:inline-flex; align-items:center; gap:.35rem;
+      padding:.25rem .65rem; border-radius:8px; font-size:.72rem; font-weight:700;
+      margin-bottom:.7rem;
+    }
+    .cl-name { font-size:.95rem; font-weight:700; margin-bottom:.3rem; }
+    .cl-meta { font-size:.75rem; color:var(--dim); margin-bottom:.8rem; }
+    .cl-stats { display:flex; flex-direction:column; gap:.4rem; }
+    .stat-row { display:flex; justify-content:space-between; align-items:center; font-size:.78rem; }
+    .stat-label { color:var(--dim); }
+    .bar-wrap { display:flex; align-items:center; gap:.45rem; }
+    .bar-bg { width:72px; height:5px; border-radius:3px; background:rgba(255,255,255,.1); }
+    .bar-fill { height:100%; border-radius:3px; transition:width .8s cubic-bezier(.4,0,.2,1); }
+    .tip-box {
+      margin-top:.8rem; padding:.6rem .8rem; border-radius:9px;
+      background:rgba(255,255,255,.05); font-size:.75rem; line-height:1.5;
+    }
+    .tip-box strong { color:var(--accent3); }
+
+    /* ═══════════════════════════════════════════════════════
+       MANUAL ENTRY PAGE
+    ═══════════════════════════════════════════════════════ */
+    .entry-layout {
+      display:grid; grid-template-columns:420px 1fr; gap:1.5rem;
+      align-items:start;
+    }
+    @media(max-width:1100px) { .entry-layout{grid-template-columns:1fr;} }
+
+    .form-card {
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:20px; padding:2rem; position:sticky; top:80px;
+    }
+    .form-card h2 { font-size:1.1rem; font-weight:800; margin-bottom:.35rem; }
+    .form-card p  { font-size:.8rem; color:var(--dim); margin-bottom:1.5rem; line-height:1.5; }
+
+    .form-grid {
+      display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.25rem;
+    }
+    .field { display:flex; flex-direction:column; gap:.4rem; }
+    .field.full { grid-column:1/-1; }
+    .field label { font-size:.75rem; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
+
+    .field input, .field select {
+      background:rgba(255,255,255,.06); border:1px solid var(--border);
+      border-radius:10px; padding:.65rem .9rem; color:var(--text);
+      font-family:inherit; font-size:.9rem; outline:none;
+      transition:border-color .2s, box-shadow .2s;
+    }
+    .field input:focus, .field select:focus {
+      border-color:var(--accent); box-shadow:0 0 0 3px rgba(233,69,96,.12);
+    }
+    .field input.error { border-color:#e74c3c; }
+
+    .range-wrap { display:flex; flex-direction:column; gap:.35rem; }
+    .range-header { display:flex; justify-content:space-between; font-size:.75rem; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
+    .range-val { color:var(--text); font-weight:800; font-size:.9rem; }
+    input[type=range] {
+      -webkit-appearance:none; width:100%; height:6px; border-radius:3px;
+      background:rgba(255,255,255,.1); outline:none; cursor:pointer;
+      accent-color:var(--accent);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance:none; width:18px; height:18px; border-radius:50%;
+      background:var(--accent); border:2px solid white; cursor:pointer;
+      box-shadow:0 2px 8px rgba(233,69,96,.5);
+    }
+
+    .btn-row { display:flex; gap:.75rem; margin-top:1.5rem; }
+    .btn {
+      display:inline-flex; align-items:center; gap:.5rem;
+      padding:.72rem 1.4rem; border-radius:11px; border:none;
+      font-family:inherit; font-weight:700; font-size:.88rem;
+      cursor:pointer; transition:transform .15s,box-shadow .15s;
+    }
+    .btn-primary {
+      background:linear-gradient(135deg,var(--accent),#ff7f50);
+      color:white; box-shadow:0 4px 18px rgba(233,69,96,.35); flex:1;
+    }
+    .btn-primary:hover { transform:translateY(-2px); box-shadow:0 8px 26px rgba(233,69,96,.5); }
+    .btn-primary:active { transform:translateY(0); }
+    .btn-secondary {
+      background:rgba(255,255,255,.07); color:var(--dim);
+      border:1px solid var(--border);
+    }
+    .btn-secondary:hover { color:var(--text); background:rgba(255,255,255,.1); }
+
+    /* result toast */
+    #entry-result {
+      margin-top:1.25rem; padding:1.1rem 1.3rem;
+      border-radius:14px; display:none; animation:fadeIn .3s ease;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+    #entry-result h4 { font-size:.95rem; font-weight:700; margin-bottom:.3rem; }
+    #entry-result p  { font-size:.8rem; color:var(--dim); line-height:1.5; }
+    #entry-result .tip { margin-top:.5rem; font-size:.8rem; }
+
+    /* ── Customer Manager Table ─────────────────────────── */
+    .manager-card {
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:20px; overflow:hidden;
+    }
+    .manager-header {
+      padding:1.2rem 1.5rem; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+      flex-wrap:wrap; gap:.75rem;
+    }
+    .manager-header h3 { font-size:.95rem; font-weight:700; }
+    .search-box {
+      display:flex; align-items:center; gap:.5rem;
+      background:rgba(255,255,255,.06); border:1px solid var(--border);
+      border-radius:10px; padding:.45rem .8rem; min-width:220px;
+    }
+    .search-box input {
+      background:none; border:none; outline:none;
+      color:var(--text); font-family:inherit; font-size:.85rem; flex:1;
+    }
+    .tbl-wrap { overflow-x:auto; max-height:540px; overflow-y:auto; }
+    table { width:100%; border-collapse:collapse; font-size:.82rem; }
+    thead { position:sticky; top:0; z-index:2; }
+    th {
+      background:#0f0f22; padding:.75rem 1rem;
+      text-align:left; font-weight:700; font-size:.72rem;
+      letter-spacing:.05em; color:var(--dim); text-transform:uppercase;
+      border-bottom:1px solid var(--border);
+    }
+    td { padding:.68rem 1rem; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:middle; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:rgba(255,255,255,.025); }
+    tr.manual-row td:first-child { border-left:3px solid var(--accent2); }
+    .seg-pill {
+      display:inline-flex; align-items:center; gap:.35rem;
+      padding:.22rem .65rem; border-radius:7px; font-size:.72rem; font-weight:700;
+    }
+    .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .delete-btn {
+      background:rgba(231,76,60,.12); border:none; cursor:pointer;
+      color:#e74c3c; border-radius:7px; padding:.3rem .55rem;
+      font-size:.8rem; transition:background .2s;
+    }
+    .delete-btn:hover { background:rgba(231,76,60,.25); }
+    .empty-state {
+      text-align:center; padding:3rem 1rem; color:var(--dim);
+    }
+    .empty-state .icon { font-size:2.5rem; margin-bottom:.75rem; }
+    .empty-state p { font-size:.85rem; }
+
+    /* stats chips row */
+    .chips { display:flex; flex-wrap:wrap; gap:.5rem; padding:.8rem 1.5rem; border-top:1px solid var(--border); }
+    .chip {
+      padding:.25rem .7rem; border-radius:7px; font-size:.74rem; font-weight:600;
+      background:rgba(255,255,255,.06); color:var(--dim);
+    }
+    .chip span { font-weight:800; color:var(--text); }
+
+    /* ── ALGORITHM STEPS ──────────────────────────────────── */
+    .steps-grid {
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:1rem;
+    }
+    .step {
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:14px; padding:1.1rem; text-align:center;
+      transition:transform .2s;
+    }
+    .step:hover { transform:translateY(-3px); }
+    .step-num {
+      width:34px; height:34px; border-radius:50%; margin:0 auto .7rem;
+      background:linear-gradient(135deg,var(--accent),#ff9a8b);
+      display:flex; align-items:center; justify-content:center;
+      font-size:.8rem; font-weight:800;
+    }
+    .step h4 { font-size:.82rem; font-weight:700; margin-bottom:.3rem; }
+    .step p  { font-size:.73rem; color:var(--dim); line-height:1.5; }
+
+    /* toast notification */
+    #toast {
+      position:fixed; bottom:2rem; right:2rem; z-index:9999;
+      padding:.9rem 1.4rem; border-radius:14px;
+      font-size:.85rem; font-weight:600;
+      transform:translateY(100px); opacity:0;
+      transition:all .3s cubic-bezier(.4,0,.2,1);
+      pointer-events:none;
+    }
+    #toast.show { transform:none; opacity:1; }
+    #toast.success { background:#1a3a2a; border:1px solid rgba(46,204,113,.4); color:#2ecc71; }
+    #toast.info    { background:#1a2a3a; border:1px solid rgba(78,205,196,.4); color:#4ecdc4; }
+    #toast.error   { background:#3a1a1a; border:1px solid rgba(231,76,60,.4);  color:#e74c3c; }
+
+    /* loading spinner */
+    .spinner {
+      display:inline-block; width:16px; height:16px; border-radius:50%;
+      border:2px solid rgba(255,255,255,.2); border-top-color:white;
+      animation:spin .6s linear infinite;
+    }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    /* cluster status banner */
+    #cluster-banner {
+      background:rgba(78,205,196,.08); border:1px solid rgba(78,205,196,.2);
+      border-radius:12px; padding:.75rem 1.25rem; margin-bottom:1.5rem;
+      display:flex; align-items:center; gap:.75rem; font-size:.84rem;
+    }
+    #cluster-banner .icon { font-size:1.1rem; }
+
+    footer {
+      text-align:center; padding:2rem 1rem;
+      border-top:1px solid var(--border); color:var(--dim); font-size:.78rem;
+      position:relative; z-index:5;
+    }
+    footer span { color:var(--accent); }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ NAV ════════════════════════════════════ -->
+<nav>
+  <div class="nav-brand">
+    <div class="nav-logo">🎯</div>
+    <div>
+      <h1>Customer Segmentation</h1>
+      <p>K-Means Clustering · Live ML Engine</p>
+    </div>
+  </div>
+
+  <div class="tab-list">
+    <button class="tab-btn active" onclick="switchTab('analytics',this)" id="tab-analytics">📊 Analytics</button>
+    <button class="tab-btn" onclick="switchTab('entry',this)"     id="tab-entry">➕ Add Customer</button>
+    <button class="tab-btn" onclick="switchTab('segments',this)"  id="tab-segments">🃏 Segments</button>
+    <button class="tab-btn" onclick="switchTab('about',this)"     id="tab-about">⚙️ Algorithm</button>
+  </div>
+
+  <div class="nav-badges">
+    <span class="badge badge-green">● Live Model</span>
+    <span class="badge badge-red" id="badge-k">K = 5</span>
+    <span class="badge badge-yellow" id="badge-count">300 Customers</span>
+  </div>
+</nav>
+
+<!-- ══════════════ ANALYTICS TAB ═════════════════════════ -->
+<main>
+<div class="page active" id="page-analytics">
+
+  <div id="cluster-banner">
+    <span class="icon">🤖</span>
+    <span id="banner-text">K-Means model running on <strong id="banner-n">300</strong> customers.
+    Clusters auto-update whenever you add new customers.</span>
+  </div>
+
+  <!-- KPI STRIP -->
+  <div class="kpi-grid mb">
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:rgba(233,69,96,.15)">👥</div>
+      <div><div class="kpi-value" id="kpi-total" style="color:var(--accent)">300</div><div class="kpi-label">Total Customers</div></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:rgba(78,205,196,.15)">🔵</div>
+      <div><div class="kpi-value" id="kpi-k" style="color:var(--accent2)">5</div><div class="kpi-label">Clusters (K)</div></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:rgba(247,220,111,.15)">📊</div>
+      <div><div class="kpi-value" id="kpi-sil" style="color:var(--accent3)">—</div><div class="kpi-label">Silhouette Score</div></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:rgba(150,206,180,.15)">💰</div>
+      <div><div class="kpi-value" id="kpi-income" style="color:#96CEB4">—</div><div class="kpi-label">Avg Income</div></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:rgba(69,183,209,.15)">⭐</div>
+      <div><div class="kpi-value" id="kpi-spending" style="color:#45B7D1">—</div><div class="kpi-label">Avg Spending Score</div></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:rgba(221,160,221,.15)">➕</div>
+      <div><div class="kpi-value" id="kpi-manual" style="color:#DDA0DD">0</div><div class="kpi-label">Manually Added</div></div>
+    </div>
+  </div>
+
+  <!-- ELBOW + SILHOUETTE -->
+  <div class="grid-2 mb">
+    <div class="chart-card">
+      <h3>📐 Elbow Method — WCSS vs K</h3>
+      <canvas id="elbowChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>📏 Silhouette Score per K</h3>
+      <canvas id="silChart"></canvas>
+    </div>
+  </div>
+
+  <!-- MAIN SCATTER -->
+  <div class="chart-card mb">
+    <h3>🗺️ Customer Clusters — Annual Income vs Spending Score &nbsp;<small style="font-size:.72rem;color:var(--accent2)">★ = manually added customers</small></h3>
+    <canvas id="scatterChart" style="max-height:420px"></canvas>
+  </div>
+
+  <!-- MINI CHARTS -->
+  <div class="grid-3 mb">
+    <div class="chart-card">
+      <h3>🥧 Cluster Size</h3>
+      <canvas id="donutChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>👫 Gender Ratio</h3>
+      <canvas id="genderChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>🎂 Avg Age per Cluster</h3>
+      <canvas id="ageChart"></canvas>
+    </div>
+  </div>
+
+</div><!-- /page-analytics -->
+
+<!-- ══════════════ ADD CUSTOMER TAB ══════════════════════ -->
+<div class="page" id="page-entry">
+  <div class="entry-layout">
+
+    <!-- LEFT: Form -->
+    <div class="form-card">
+      <h2>➕ Add New Customer</h2>
+      <p>Fill in the customer details below. The K-Means model will instantly re-cluster all customers and assign this customer to the best-fit segment.</p>
+
+      <div class="form-grid">
+        <!-- Name -->
+        <div class="field full">
+          <label>Full Name</label>
+          <input type="text" id="f-name" placeholder="e.g. Priya Sharma" />
+        </div>
+
+        <!-- Age -->
+        <div class="field">
+          <label>Age</label>
+          <input type="number" id="f-age" placeholder="25" min="18" max="80" value="" />
+        </div>
+
+        <!-- Gender -->
+        <div class="field">
+          <label>Gender</label>
+          <select id="f-gender">
+            <option value="">Select…</option>
+            <option value="Female">Female</option>
+            <option value="Male">Male</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <!-- Income slider -->
+        <div class="field full">
+          <div class="range-wrap">
+            <div class="range-header">
+              <span>Annual Income (₹ thousands)</span>
+              <span class="range-val">₹<span id="rv-income">60</span>k</span>
+            </div>
+            <input type="range" id="f-income" min="10" max="200" value="60"
+                   oninput="document.getElementById('rv-income').textContent=this.value; livePreview()">
+          </div>
+        </div>
+
+        <!-- Spending slider -->
+        <div class="field full">
+          <div class="range-wrap">
+            <div class="range-header">
+              <span>Spending Score (1–100)</span>
+              <span class="range-val"><span id="rv-spending">50</span></span>
+            </div>
+            <input type="range" id="f-spending" min="1" max="100" value="50"
+                   oninput="document.getElementById('rv-spending').textContent=this.value; livePreview()">
+          </div>
+        </div>
+
+        <!-- Purchase Frequency -->
+        <div class="field">
+          <label>Purchases / Year</label>
+          <input type="number" id="f-freq" placeholder="6" min="1" max="100" value="" />
+        </div>
+
+        <!-- Membership Years -->
+        <div class="field">
+          <label>Membership Years</label>
+          <input type="number" id="f-mem" placeholder="2" min="0" max="20" value="" />
+        </div>
+
+        <!-- Email (optional) -->
+        <div class="field full">
+          <label>Email <small style="font-weight:400;text-transform:none">(optional)</small></label>
+          <input type="email" id="f-email" placeholder="customer@example.com" />
+        </div>
+      </div>
+
+      <!-- Live preview -->
+      <div id="live-preview" style="padding:.85rem 1rem;border-radius:12px;
+           background:rgba(78,205,196,.07);border:1px solid rgba(78,205,196,.2);
+           font-size:.8rem;margin-bottom:.5rem;">
+        <strong style="color:var(--accent2)">🤖 Live Prediction:</strong>
+        Adjust sliders to see predicted segment…
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="addCustomer()" id="btn-add">
+          🚀 Add &amp; Cluster
+        </button>
+        <button class="btn btn-secondary" onclick="resetForm()">↺ Reset</button>
+      </div>
+
+      <div id="entry-result"></div>
+    </div>
+
+    <!-- RIGHT: Customer Manager Table -->
+    <div>
+      <div class="manager-card">
+        <div class="manager-header">
+          <h3>📋 All Customers &nbsp;<span id="mgr-count" style="color:var(--dim);font-weight:400;font-size:.8rem"></span></h3>
+          <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+            <div class="search-box">
+              🔍 <input type="text" id="search-input" placeholder="Search name, segment…"
+                         oninput="renderTable()" />
+            </div>
+            <select id="filter-cluster" onchange="renderTable()"
+              style="background:rgba(255,255,255,.06);border:1px solid var(--border);
+                     border-radius:10px;padding:.45rem .75rem;color:var(--text);
+                     font-family:inherit;font-size:.8rem;outline:none;">
+              <option value="">All Clusters</option>
+            </select>
+            <button class="btn btn-secondary" style="padding:.42rem .9rem;font-size:.78rem"
+                    onclick="exportCSV()">⬇️ Export CSV</button>
+          </div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Customer ID</th>
+                <th>Name</th>
+                <th>Age</th>
+                <th>Gender</th>
+                <th>Income (₹k)</th>
+                <th>Spending</th>
+                <th>Freq/yr</th>
+                <th>Segment</th>
+                <th>Source</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+
+        <div class="chips" id="stat-chips"></div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /page-entry -->
+
+<!-- ══════════════ SEGMENTS TAB ══════════════════════════ -->
+<div class="page" id="page-segments">
+  <div class="sec-title mb">Customer Segment Profiles</div>
+  <div id="seg-cards" class="cluster-grid mb"></div>
+
+  <!-- Income vs Spending table per cluster -->
+  <div class="sec-title mb">Cluster Centroid Summary</div>
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:18px;overflow:hidden;margin-bottom:1.75rem">
+    <table>
+      <thead>
+        <tr>
+          <th>Cluster</th><th>Segment Name</th><th>Count</th>
+          <th>Avg Age</th><th>Avg Income</th><th>Avg Spending</th>
+          <th>Avg Freq</th><th>Centroid Inc</th><th>Centroid Spd</th>
+        </tr>
+      </thead>
+      <tbody id="centroid-tbl"></tbody>
+    </table>
+  </div>
+</div><!-- /page-segments -->
+
+<!-- ══════════════ ALGORITHM TAB ═════════════════════════ -->
+<div class="page" id="page-about">
+  <div class="sec-title mb">K-Means Algorithm — Step by Step</div>
+  <div class="steps-grid mb">
+    <div class="step"><div class="step-num">1</div><h4>Data Collection</h4><p>Load retail/e-commerce customer records with income, spending &amp; demographics</p></div>
+    <div class="step"><div class="step-num">2</div><h4>Preprocessing</h4><p>Handle missing values, encode gender (0/1), normalize with Z-score standardization</p></div>
+    <div class="step"><div class="step-num">3</div><h4>Feature Selection</h4><p>Annual Income &amp; Spending Score chosen as primary 2D clustering features</p></div>
+    <div class="step"><div class="step-num">4</div><h4>Elbow Method</h4><p>Plot WCSS vs K (2–11); pick the "elbow" where inertia rate-of-change flattens</p></div>
+    <div class="step"><div class="step-num">5</div><h4>Silhouette Score</h4><p>Validate K by computing mean silhouette — higher is better (max = 1.0)</p></div>
+    <div class="step"><div class="step-num">6</div><h4>K-Means++</h4><p>Smart centroid init: pick first at random, each next proportional to distance²</p></div>
+    <div class="step"><div class="step-num">7</div><h4>E-Step</h4><p>Assign every customer to the nearest centroid using Euclidean distance</p></div>
+    <div class="step"><div class="step-num">8</div><h4>M-Step</h4><p>Recompute centroids as mean of all assigned points; repeat until convergence</p></div>
+  </div>
+
+  <div class="sec-title mb">📐 Mathematics</div>
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:18px;padding:2rem;margin-bottom:1.75rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem">
+      <div>
+        <p style="color:var(--dim);font-size:.8rem;margin-bottom:.5rem">WCSS (Within-Cluster Sum of Squares)</p>
+        <div style="background:#0a0a18;border-radius:10px;padding:1rem;font-family:'JetBrains Mono';font-size:.9rem;color:#96CEB4">
+          WCSS = Σᵢ Σₓ∈Cᵢ ‖x − μᵢ‖²
+        </div>
+        <p style="color:var(--dim);font-size:.75rem;margin-top:.6rem">Minimize total squared distance from each point to its centroid</p>
+      </div>
+      <div>
+        <p style="color:var(--dim);font-size:.8rem;margin-bottom:.5rem">Silhouette Score</p>
+        <div style="background:#0a0a18;border-radius:10px;padding:1rem;font-family:'JetBrains Mono';font-size:.9rem;color:#4ECDC4">
+          s(i) = (b(i) − a(i)) / max(a(i), b(i))
+        </div>
+        <p style="color:var(--dim);font-size:.75rem;margin-top:.6rem">a(i)=mean intra-cluster dist, b(i)=mean nearest-cluster dist</p>
+      </div>
+      <div>
+        <p style="color:var(--dim);font-size:.8rem;margin-bottom:.5rem">Euclidean Distance (Assignment)</p>
+        <div style="background:#0a0a18;border-radius:10px;padding:1rem;font-family:'JetBrains Mono';font-size:.9rem;color:#FF6B6B">
+          d(x,μ) = √( Σⱼ (xⱼ − μⱼ)² )
+        </div>
+        <p style="color:var(--dim);font-size:.75rem;margin-top:.6rem">Straight-line distance in feature space</p>
+      </div>
+      <div>
+        <p style="color:var(--dim);font-size:.8rem;margin-bottom:.5rem">Centroid Update (M-Step)</p>
+        <div style="background:#0a0a18;border-radius:10px;padding:1rem;font-family:'JetBrains Mono';font-size:.9rem;color:#FFEAA7">
+          μᵢ = (1/|Cᵢ|) Σₓ∈Cᵢ x
+        </div>
+        <p style="color:var(--dim);font-size:.75rem;margin-top:.6rem">New centroid = mean position of all assigned points</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-title mb">Tech Stack</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1rem;margin-bottom:1.75rem">
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">🐍</div><h4>Python 3.x</h4><p>Core language</p></div>
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">🐼</div><h4>Pandas</h4><p>Data handling</p></div>
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">🔢</div><h4>NumPy</h4><p>Numerics</p></div>
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">🤖</div><h4>Scikit-learn</h4><p>K-Means, PCA, scaling</p></div>
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">📊</div><h4>Matplotlib</h4><p>Static charts</p></div>
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">🎨</div><h4>Seaborn</h4><p>Statistical plots</p></div>
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">🌐</div><h4>Chart.js</h4><p>Live dashboard</p></div>
+    <div class="step"><div style="font-size:1.8rem;margin-bottom:.5rem">⚡</div><h4>JS K-Means</h4><p>Live engine</p></div>
+  </div>
+</div><!-- /page-about -->
+</main>
+
+<footer>Built with <span>♥</span> · Customer Segmentation using K-Means Clustering ·
+Python · Scikit-learn · JavaScript Live Engine</footer>
+
+<!-- ── Toast ────────────────────────────────────── -->
+<div id="toast"></div>
+
+<!-- ════════════════════════════════════════════════════════
+     JAVASCRIPT — LIVE K-MEANS ENGINE + FULL UI
+════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ───────────────────────────────────────────────────────
+   CONSTANTS & COLORS
+─────────────────────────────────────────────────────── */
+const K = 5;
+const COLORS = ['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD'];
+const SEG_ICONS = ['💎','🌟','💼','🔥','💸','🌈'];
+
+const SEG_TIPS = [
+  'VIP loyalty programs, exclusive early access, premium product lines.',
+  'Reward points, seasonal discounts, bundle deals.',
+  'Targeted upsell campaigns, EMI offers, savings-plan promotions.',
+  'Social media marketing, flash sales, influencer collaborations.',
+  'Value-for-money promotions, clearance sales, budget bundles.',
+  'General newsletters, mid-tier offers, engagement campaigns.',
+];
+
+/* ───────────────────────────────────────────────────────
+   SYNTHETIC DATASET GENERATION (300 customers)
+─────────────────────────────────────────────────────── */
+function gauss(mu,s){
+  return mu+s*Math.sqrt(-2*Math.log(Math.random()))*Math.cos(2*Math.PI*Math.random());
+}
+function rnd(min,max){ return Math.random()*(max-min)+min; }
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+
+const GENDERS = ['Male','Female'];
+const FIRST_NAMES_M = ['Arjun','Rohit','Vikram','Suresh','Anil','Manoj','Rajesh','Deepak','Sanjay','Kiran'];
+const FIRST_NAMES_F = ['Priya','Anita','Sunita','Meena','Divya','Kavya','Sneha','Pooja','Rekha','Lata'];
+const LAST_NAMES    = ['Sharma','Patel','Kumar','Singh','Gupta','Reddy','Nair','Joshi','Shah','Verma'];
+
+function randomName(gender){
+  const first = (gender==='Male'?FIRST_NAMES_M:FIRST_NAMES_F)[Math.floor(Math.random()*10)];
+  const last  = LAST_NAMES[Math.floor(Math.random()*10)];
+  return first+' '+last;
+}
+
+function generateDataset(n=300){
+  const rows = [];
+  // Seed 5 rough groups
+  const groups = [
+    {inc:115,spd:82,aAge:38,n:Math.round(n*.18)},
+    {inc:73, spd:63,aAge:35,n:Math.round(n*.23)},
+    {inc:78, spd:38,aAge:45,n:Math.round(n*.21)},
+    {inc:31, spd:69,aAge:24,n:Math.round(n*.19)},
+    {inc:28, spd:24,aAge:48,n:Math.round(n*.19)},
+  ];
+  let id = 1;
+  groups.forEach(g=>{
+    for(let i=0;i<g.n;i++){
+      const gender = GENDERS[Math.floor(Math.random()*2)];
+      const inc    = Math.round(clamp(gauss(g.inc,12),10,200));
+      const spd    = Math.round(clamp(gauss(g.spd,10),1,100));
+      rows.push({
+        id: 'CUST_'+String(id++).padStart(4,'0'),
+        name: randomName(gender),
+        age: Math.round(clamp(gauss(g.aAge,6),18,78)),
+        gender,
+        income:  inc,
+        spending:spd,
+        freq:    Math.max(1,Math.round(spd/10+rnd(-2,2))),
+        mem:     Math.floor(rnd(0,14)),
+        email:   '',
+        manual:  false,
+        cluster: -1,
+      });
+    }
+  });
+  return rows;
+}
+
+/* ───────────────────────────────────────────────────────
+   JS K-MEANS IMPLEMENTATION
+─────────────────────────────────────────────────────── */
+function zscore(data,features){
+  const n=data.length;
+  const means={}, stds={};
+  features.forEach(f=>{
+    const vals=data.map(r=>r[f]);
+    const m=vals.reduce((a,b)=>a+b,0)/n;
+    const s=Math.sqrt(vals.reduce((a,b)=>a+(b-m)**2,0)/n)||1;
+    means[f]=m; stds[f]=s;
+  });
+  return { means, stds,
+    norm: (r,f)=>(r[f]-means[f])/stds[f] };
+}
+
+function euclidean(a,b){ return Math.sqrt(a.reduce((s,v,i)=>s+(v-b[i])**2,0)); }
+
+function kmeanspp(points,k){
+  const cents=[points[Math.floor(Math.random()*points.length)].slice()];
+  while(cents.length<k){
+    const dists=points.map(p=>Math.min(...cents.map(c=>euclidean(p,c)**2)));
+    const total=dists.reduce((a,b)=>a+b,0);
+    let r=Math.random()*total, cum=0;
+    for(let i=0;i<dists.length;i++){ cum+=dists[i]; if(cum>=r){ cents.push(points[i].slice()); break; } }
+  }
+  return cents;
+}
+
+function runKMeans(data, k, features, maxIter=300){
+  const sc = zscore(data, features);
+  const pts = data.map(r=>features.map(f=>sc.norm(r,f)));
+  let cents = kmeanspp(pts,k);
+  let labels = new Array(pts.length).fill(0);
+  for(let it=0;it<maxIter;it++){
+    const newLabels = pts.map(p=>{
+      let best=0, bestD=Infinity;
+      cents.forEach((c,i)=>{ const d=euclidean(p,c); if(d<bestD){bestD=d;best=i;} });
+      return best;
+    });
+    const changed = newLabels.some((l,i)=>l!==labels[i]);
+    labels = newLabels;
+    if(!changed) break;
+    cents = Array.from({length:k},(_,ci)=>{
+      const members=pts.filter((_,i)=>labels[i]===ci);
+      if(!members.length) return cents[ci];
+      return features.map((_,fi)=>members.reduce((s,p)=>s+p[fi],0)/members.length);
+    });
+  }
+  // Centroid in original scale
+  const centroidsOrig = cents.map(c=>({
+    income: c[0]*sc.stds.income+sc.means.income,
+    spending: c[1]*sc.stds.spending+sc.means.spending,
+  }));
+  return { labels, cents, centroidsOrig, sc };
+}
+
+function silhouetteScore(pts, labels, k){
+  const n=pts.length;
+  if(n<2) return 0;
+  const scores=pts.map((p,i)=>{
+    const ci=labels[i];
+    const members=pts.filter((_,j)=>j!==i&&labels[j]===ci);
+    const a=members.length?members.reduce((s,q)=>s+euclidean(p,q),0)/members.length:0;
+    let b=Infinity;
+    for(let c=0;c<k;c++){
+      if(c===ci)continue;
+      const oth=pts.filter((_,j)=>labels[j]===c);
+      if(!oth.length)continue;
+      const m=oth.reduce((s,q)=>s+euclidean(p,q),0)/oth.length;
+      if(m<b)b=m;
+    }
+    if(b===Infinity)return 0;
+    return (b-a)/Math.max(a,b);
+  });
+  return scores.reduce((a,b)=>a+b,0)/n;
+}
+
+function wcss(pts, labels, cents){
+  return pts.reduce((s,p,i)=>s+euclidean(p,cents[labels[i]])**2,0);
+}
+
+/* ───────────────────────────────────────────────────────
+   STATE
+─────────────────────────────────────────────────────── */
+let customers = generateDataset(300);
+let clusterResult = null; // {labels, cents, centroidsOrig}
+let segmentMeta   = [];   // [{name,icon,color,tip}] per cluster id (sorted by income desc)
+let manualCount   = 0;
+let nextManualId  = 1;
+
+const FEATURES = ['income','spending'];
+
+/* ───────────────────────────────────────────────────────
+   CLUSTER + SORT → assign stable names by centroid income
+─────────────────────────────────────────────────────── */
+function reCluster(){
+  const res = runKMeans(customers, K, FEATURES);
+  clusterResult = res;
+
+  // Sort cluster ids by centroid income desc → stable labeling
+  const order = res.centroidsOrig
+    .map((c,i)=>({i,inc:c.income,spd:c.spending}))
+    .sort((a,b)=>b.inc-a.inc||b.spd-a.spd);
+
+  const remap = {}; order.forEach((o,rank)=>remap[o.i]=rank);
+  const labels = res.labels.map(l=>remap[l]);
+  res.labels = labels;
+
+  const remappedCents = order.map(o=>res.cents[o.i]);
+  const remappedOrig  = order.map(o=>res.centroidsOrig[o.i]);
+  res.cents = remappedCents;
+  res.centroidsOrig = remappedOrig;
+
+  // Assign cluster back to customers
+  customers.forEach((c,i)=>{ c.cluster=labels[i]; });
+
+  // Compute silhouette
+  const sc = zscore(customers, FEATURES);
+  const pts = customers.map(r=>FEATURES.map(f=>sc.norm(r,f)));
+  const sil = silhouetteScore(pts, labels, K);
+  res.silhouette = sil;
+  res.wcssVal    = wcss(pts, labels, res.cents);
+
+  // Segment meta (static nice names)
+  const SEG_NAMES=['Premium / High Spenders','Loyal / Regular Spenders',
+                   'Potential / Savers','Impulse / Young Spenders',
+                   'Budget / Low Spenders','Moderate / Balanced'];
+  segmentMeta = Array.from({length:K},(_,i)=>({
+    name:  SEG_NAMES[i]||`Segment ${i}`,
+    icon:  SEG_ICONS[i]||'🔵',
+    color: COLORS[i]||'#888',
+    tip:   SEG_TIPS[i]||'',
+  }));
+
+  return res;
+}
+
+/* ───────────────────────────────────────────────────────
+   CHART.JS INSTANCES
+─────────────────────────────────────────────────────── */
+Chart.defaults.color='#7777aa';
+Chart.defaults.font.family='Inter';
+const chartBg='#141428';
+const chartGrid='#1e1e36';
+
+let charts={};
+
+function mkLine(id,xLab,yLab){
+  return new Chart(document.getElementById(id),{
+    type:'line',
+    data:{labels:[],datasets:[]},
+    options:{
+      responsive:true,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{title:{display:true,text:xLab},grid:{color:chartGrid}},
+        y:{title:{display:true,text:yLab},grid:{color:chartGrid}},
+      }
+    }
+  });
+}
+function mkBar(id,xLab,yLab,horiz=false){
+  return new Chart(document.getElementById(id),{
+    type:'bar',
+    data:{labels:[],datasets:[]},
+    options:{
+      indexAxis: horiz?'y':'x',
+      responsive:true,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{title:{display:true,text:horiz?yLab:xLab},grid:{color:chartGrid}},
+        y:{title:{display:true,text:horiz?xLab:yLab},grid:{color:chartGrid}},
+      }
+    }
+  });
+}
+function mkScatter(id){
+  return new Chart(document.getElementById(id),{
+    type:'scatter',
+    data:{datasets:[]},
+    options:{
+      responsive:true,
+      plugins:{
+        legend:{position:'right',labels:{boxWidth:11,padding:12,font:{size:10}}},
+        tooltip:{callbacks:{
+          label(ctx){
+            const c=ctx.raw.c;
+            if(!c) return `(${ctx.raw.x.toFixed(0)},${ctx.raw.y.toFixed(0)})`;
+            return [`${c.id}: ${c.name}`,
+                    `Income ₹${c.income}k  Spending ${c.spending}`,
+                    `Age ${c.age}  ${c.gender}${c.manual?' ⭐ ADDED':''}`];
+          }
+        }}
+      },
+      scales:{
+        x:{title:{display:true,text:'Annual Income (₹k)'},grid:{color:chartGrid},min:5,max:205},
+        y:{title:{display:true,text:'Spending Score'},grid:{color:chartGrid},min:0,max:105},
+      }
+    }
+  });
+}
+function mkDonut(id){
+  return new Chart(document.getElementById(id),{
+    type:'doughnut',
+    data:{labels:[],datasets:[]},
+    options:{
+      responsive:true, cutout:'60%',
+      plugins:{legend:{position:'bottom',labels:{boxWidth:11,padding:9,font:{size:10}}}}
+    }
+  });
+}
+function mkBarMulti(id){
+  return new Chart(document.getElementById(id),{
+    type:'bar',
+    data:{labels:[],datasets:[]},
+    options:{
+      responsive:true,
+      scales:{
+        x:{grid:{color:chartGrid}},
+        y:{max:100,title:{display:true,text:'%'},grid:{color:chartGrid}},
+      },
+      plugins:{legend:{position:'bottom',labels:{boxWidth:11,padding:9,font:{size:10}}}}
+    }
+  });
+}
+
+function initCharts(){
+  charts.elbow   = mkLine('elbowChart','K','WCSS');
+  charts.sil     = mkBar('silChart','K','Silhouette');
+  charts.scatter = mkScatter('scatterChart');
+  charts.donut   = mkDonut('donutChart');
+  charts.gender  = mkBarMulti('genderChart');
+  charts.age     = mkBar('ageChart','Cluster','Avg Age');
+}
+
+/* ───────────────────────────────────────────────────────
+   ELBOW / SILHOUETTE PRECOMPUTE (2–9)
+─────────────────────────────────────────────────────── */
+let elbowData=[],silData=[];
+
+function precomputeElbow(){
+  elbowData=[]; silData=[];
+  const sc=zscore(customers,FEATURES);
+  const pts=customers.map(r=>FEATURES.map(f=>sc.norm(r,f)));
+  for(let k=2;k<=9;k++){
+    const res=runKMeans(customers,k,FEATURES,150);
+    elbowData.push({k,wcssV:wcss(pts,res.labels,res.cents)});
+    silData.push({k,sil:silhouetteScore(pts,res.labels,k)});
+  }
+}
+
+/* ───────────────────────────────────────────────────────
+   UPDATE ALL CHARTS
+─────────────────────────────────────────────────────── */
+function updateAllCharts(){
+  const res=clusterResult;
+  const n=customers.length;
+
+  // KPIs
+  document.getElementById('kpi-total').textContent=n;
+  document.getElementById('kpi-k').textContent=K;
+  document.getElementById('kpi-sil').textContent=res.silhouette.toFixed(3);
+  document.getElementById('kpi-income').textContent='₹'+Math.round(customers.reduce((s,c)=>s+c.income,0)/n)+'k';
+  document.getElementById('kpi-spending').textContent=Math.round(customers.reduce((s,c)=>s+c.spending,0)/n);
+  document.getElementById('kpi-manual').textContent=manualCount;
+  document.getElementById('badge-k').textContent='K = '+K;
+  document.getElementById('badge-count').textContent=n+' Customers';
+  document.getElementById('banner-n').textContent=n;
+
+  // Elbow
+  charts.elbow.data.labels=elbowData.map(d=>d.k);
+  charts.elbow.data.datasets=[{
+    label:'WCSS', data:elbowData.map(d=>d.wcssV),
+    borderColor:'#e94560', backgroundColor:'rgba(233,69,96,.1)',
+    fill:true, tension:.4,
+    pointBackgroundColor:elbowData.map(d=>d.k===K?'#FFEAA7':'#e94560'),
+    pointRadius:elbowData.map(d=>d.k===K?8:5),
+    pointBorderColor:'white',pointBorderWidth:2
+  }];
+  charts.elbow.update();
+
+  // Silhouette
+  charts.sil.data.labels=silData.map(d=>d.k);
+  charts.sil.data.datasets=[{
+    label:'Silhouette', data:silData.map(d=>d.sil),
+    backgroundColor:silData.map(d=>d.k===K?'#e94560':'rgba(78,205,196,.7)'),
+    borderRadius:7,borderSkipped:false
+  }];
+  charts.sil.update();
+
+  // Scatter
+  const datasets=[];
+  for(let ci=0;ci<K;ci++){
+    const group=customers.filter(c=>c.cluster===ci);
+    const manual=group.filter(c=>c.manual);
+    const auto  =group.filter(c=>!c.manual);
+    if(auto.length){
+      datasets.push({
+        label:`C${ci}: ${segmentMeta[ci].name}`,
+        data:auto.map(c=>({x:c.income,y:c.spending,c})),
+        backgroundColor:COLORS[ci]+'bb',borderColor:COLORS[ci],
+        borderWidth:1,pointRadius:5,pointHoverRadius:8,
+        pointStyle:'circle'
+      });
+    }
+    if(manual.length){
+      datasets.push({
+        label:`C${ci} ★ Added`,
+        data:manual.map(c=>({x:c.income,y:c.spending,c})),
+        backgroundColor:'#fff',borderColor:COLORS[ci],
+        borderWidth:2.5,pointRadius:9,pointHoverRadius:12,
+        pointStyle:'star', showLine:false
+      });
+    }
+  }
+  charts.scatter.data.datasets=datasets;
+  charts.scatter.update();
+
+  // Donut
+  const sizes=Array.from({length:K},(_,i)=>customers.filter(c=>c.cluster===i).length);
+  charts.donut.data.labels=segmentMeta.map((s,i)=>`C${i}: ${s.name.split('/')[0].trim()}`);
+  charts.donut.data.datasets=[{
+    data:sizes,
+    backgroundColor:COLORS.slice(0,K).map(c=>c+'cc'),
+    borderColor:'#0d0d1a',borderWidth:3,hoverOffset:10
+  }];
+  charts.donut.update();
+
+  // Gender bar
+  const gLabels=segmentMeta.map((_,i)=>`C${i}`);
+  const maleP=[],femP=[];
+  for(let ci=0;ci<K;ci++){
+    const g=customers.filter(c=>c.cluster===ci);
+    const m=g.filter(c=>c.gender==='Male').length;
+    maleP.push(g.length?+(m/g.length*100).toFixed(0):0);
+    femP.push(g.length?+((g.length-m)/g.length*100).toFixed(0):0);
+  }
+  charts.gender.data.labels=gLabels;
+  charts.gender.data.datasets=[
+    {label:'Male %',  data:maleP,backgroundColor:'#45B7D1bb',borderRadius:5,borderSkipped:false},
+    {label:'Female %',data:femP, backgroundColor:'#FF6B9Dbb',borderRadius:5,borderSkipped:false},
+  ];
+  charts.gender.update();
+
+  // Age bar (horizontal)
+  const avgAges=Array.from({length:K},(_,ci)=>{
+    const g=customers.filter(c=>c.cluster===ci);
+    return g.length?+(g.reduce((s,c)=>s+c.age,0)/g.length).toFixed(1):0;
+  });
+  charts.age.data.labels=segmentMeta.map((s,i)=>`C${i}: ${s.name.split('/')[0].trim()}`);
+  charts.age.data.datasets=[{
+    label:'Avg Age',data:avgAges,
+    backgroundColor:COLORS.slice(0,K).map(c=>c+'bb'),
+    borderRadius:7,borderSkipped:false
+  }];
+  charts.age.options.indexAxis='y';
+  charts.age.update();
+
+  // Segment cards
+  buildSegCards();
+  buildCentroidTable();
+  renderTable();
+  buildStatChips();
+}
+
+/* ───────────────────────────────────────────────────────
+   SEGMENT CARDS
+─────────────────────────────────────────────────────── */
+function buildSegCards(){
+  const wrap=document.getElementById('seg-cards');
+  wrap.innerHTML='';
+  segmentMeta.forEach((sm,ci)=>{
+    const group=customers.filter(c=>c.cluster===ci);
+    const avgInc=group.reduce((s,c)=>s+c.income,0)/(group.length||1);
+    const avgSpd=group.reduce((s,c)=>s+c.spending,0)/(group.length||1);
+    const avgAge=group.reduce((s,c)=>s+c.age,0)/(group.length||1);
+    const incPct=((avgInc-10)/190*100).toFixed(0);
+    const div=document.createElement('div');
+    div.className='cl-card';
+    div.style.background=`linear-gradient(135deg,${sm.color}14,var(--bg-card))`;
+    div.innerHTML=`
+      <div class="cl-badge" style="background:${sm.color}1e;color:${sm.color}">
+        ${sm.icon} Cluster ${ci}
+      </div>
+      <div class="cl-name">${sm.name}</div>
+      <div class="cl-meta">${group.length} customers (${(group.length/customers.length*100).toFixed(0)}%)</div>
+      <div class="cl-stats">
+        ${statRow('Avg Income',`₹${avgInc.toFixed(0)}k`,incPct,sm.color)}
+        ${statRow('Avg Spending',avgSpd.toFixed(0),avgSpd,sm.color)}
+        ${statRow('Avg Age',avgAge.toFixed(0)+'y',((avgAge-18)/62*100).toFixed(0),sm.color)}
+      </div>
+      <div class="tip-box"><strong>💡 Marketing:</strong> ${sm.tip}</div>
+    `;
+    wrap.appendChild(div);
+  });
+}
+function statRow(label,val,pct,color){
+  return `<div class="stat-row">
+    <span class="stat-label">${label}</span>
+    <div class="bar-wrap">
+      <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <span style="font-size:.78rem">${val}</span>
+    </div>
+  </div>`;
+}
+
+/* ───────────────────────────────────────────────────────
+   CENTROID TABLE
+─────────────────────────────────────────────────────── */
+function buildCentroidTable(){
+  const tbody=document.getElementById('centroid-tbl');
+  tbody.innerHTML='';
+  for(let ci=0;ci<K;ci++){
+    const sm=segmentMeta[ci];
+    const group=customers.filter(c=>c.cluster===ci);
+    if(!group.length) continue;
+    const avg=k=>+(group.reduce((s,c)=>s+c[k],0)/group.length).toFixed(1);
+    const cent=clusterResult.centroidsOrig[ci];
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td><span class="dot" style="background:${sm.color}"></span>C${ci}</td>
+      <td>${sm.icon} ${sm.name}</td>
+      <td>${group.length}</td>
+      <td>${avg('age')}</td>
+      <td>₹${avg('income')}k</td>
+      <td>${avg('spending')}</td>
+      <td>${avg('freq')}</td>
+      <td>₹${cent.income.toFixed(1)}k</td>
+      <td>${cent.spending.toFixed(1)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+/* ───────────────────────────────────────────────────────
+   CUSTOMER TABLE + SEARCH/FILTER
+─────────────────────────────────────────────────────── */
+function buildFilterDropdown(){
+  const sel=document.getElementById('filter-cluster');
+  sel.innerHTML='<option value="">All Clusters</option>';
+  for(let ci=0;ci<K;ci++){
+    const o=document.createElement('option');
+    o.value=ci; o.textContent=`C${ci}: ${segmentMeta[ci]?segmentMeta[ci].name:'Cluster '+ci}`;
+    sel.appendChild(o);
+  }
+}
+
+function renderTable(){
+  const tbody=document.getElementById('tbl-body');
+  const query=(document.getElementById('search-input').value||'').toLowerCase();
+  const filterC=document.getElementById('filter-cluster').value;
+  let rows=customers;
+  if(query) rows=rows.filter(c=>
+    c.name.toLowerCase().includes(query)||
+    c.id.toLowerCase().includes(query)||
+    (segmentMeta[c.cluster]&&segmentMeta[c.cluster].name.toLowerCase().includes(query))
+  );
+  if(filterC!=='') rows=rows.filter(c=>c.cluster===+filterC);
+  // Most recent manual entries first
+  rows=[...rows.filter(c=>c.manual).reverse(), ...rows.filter(c=>!c.manual)];
+
+  document.getElementById('mgr-count').textContent=`(${rows.length} shown of ${customers.length})`;
+  tbody.innerHTML='';
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="10"><div class="empty-state"><div class="icon">🔍</div><p>No customers match your search.</p></div></td></tr>';
+    return;
+  }
+  rows.slice(0,100).forEach(c=>{
+    const sm=segmentMeta[c.cluster];
+    const tr=document.createElement('tr');
+    if(c.manual) tr.className='manual-row';
+    tr.innerHTML=`
+      <td style="font-family:'JetBrains Mono';font-size:.78rem;color:var(--dim)">${c.id}</td>
+      <td style="font-weight:600">${c.name||'—'}</td>
+      <td>${c.age}</td>
+      <td>${c.gender}</td>
+      <td>₹${c.income}k</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <div style="width:${c.spending}px;max-width:72px;height:5px;border-radius:3px;
+               background:${sm?sm.color:'#888'}88"></div>
+          ${c.spending}
+        </div>
+      </td>
+      <td>${c.freq}</td>
+      <td>
+        ${sm?`<span class="seg-pill" style="background:${sm.color}18;color:${sm.color}">
+          <span class="dot" style="background:${sm.color}"></span>${sm.name}</span>`:'—'}
+      </td>
+      <td>
+        ${c.manual
+          ? '<span style="color:var(--accent2);font-size:.72rem;font-weight:700">⭐ Manual</span>'
+          : '<span style="color:var(--dim);font-size:.72rem">Auto</span>'}
+      </td>
+      <td>
+        ${c.manual
+          ? `<button class="delete-btn" onclick="deleteCustomer('${c.id}')">🗑</button>`
+          : ''}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function buildStatChips(){
+  const n=customers.length;
+  const m=customers.filter(c=>c.manual).length;
+  const avgInc=+(customers.reduce((s,c)=>s+c.income,0)/n).toFixed(0);
+  const avgSpd=+(customers.reduce((s,c)=>s+c.spending,0)/n).toFixed(0);
+  const avgAge=+(customers.reduce((s,c)=>s+c.age,0)/n).toFixed(0);
+  document.getElementById('stat-chips').innerHTML=`
+    <div class="chip">Total: <span>${n}</span></div>
+    <div class="chip">Manual: <span>${m}</span></div>
+    <div class="chip">Avg Income: <span>₹${avgInc}k</span></div>
+    <div class="chip">Avg Spending: <span>${avgSpd}</span></div>
+    <div class="chip">Avg Age: <span>${avgAge}</span></div>
+    <div class="chip">Clusters: <span>${K}</span></div>
+    <div class="chip">Silhouette: <span>${clusterResult.silhouette.toFixed(3)}</span></div>
+  `;
+}
+
+/* ───────────────────────────────────────────────────────
+   LIVE PREVIEW (while user adjusts sliders)
+─────────────────────────────────────────────────────── */
+function livePreview(){
+  const inc=+document.getElementById('f-income').value;
+  const spd=+document.getElementById('f-spending').value;
+  if(!clusterResult) return;
+  const ci=predictCluster(inc,spd);
+  const sm=segmentMeta[ci];
+  document.getElementById('live-preview').innerHTML=
+    `<strong style="color:${sm.color}">🤖 Live Prediction: ${sm.icon} ${sm.name}</strong>
+    <br><span style="color:var(--dim);font-size:.75rem">Income ₹${inc}k · Spending ${spd} → Cluster ${ci}</span>`;
+}
+
+function predictCluster(inc,spd){
+  // Find nearest centroid in original space
+  let best=0, bestD=Infinity;
+  clusterResult.centroidsOrig.forEach((c,i)=>{
+    const d=Math.sqrt((inc-c.income)**2+(spd-c.spending)**2);
+    if(d<bestD){bestD=d;best=i;}
+  });
+  return best;
+}
+
+/* ───────────────────────────────────────────────────────
+   ADD CUSTOMER (Manual Entry → Re-cluster)
+─────────────────────────────────────────────────────── */
+function validateForm(){
+  let ok=true;
+  const fields=[
+    {id:'f-age',  check:v=>v>=18&&v<=80,  msg:'Age must be 18–80'},
+    {id:'f-freq', check:v=>v>=1&&v<=100,  msg:'Frequency 1–100'},
+    {id:'f-mem',  check:v=>v>=0&&v<=20,   msg:'Membership 0–20'},
+  ];
+  fields.forEach(f=>{
+    const el=document.getElementById(f.id);
+    const v=+el.value;
+    if(!el.value||!f.check(v)){
+      el.classList.add('error');
+      ok=false;
+    } else el.classList.remove('error');
+  });
+  if(!document.getElementById('f-gender').value){
+    document.getElementById('f-gender').style.borderColor='#e74c3c'; ok=false;
+  } else document.getElementById('f-gender').style.borderColor='';
+  return ok;
+}
+
+function addCustomer(){
+  if(!validateForm()){ showToast('Please fill all required fields correctly.','error'); return; }
+
+  const btn=document.getElementById('btn-add');
+  btn.innerHTML='<span class="spinner"></span> Clustering…';
+  btn.disabled=true;
+
+  setTimeout(()=>{
+    const inc  = +document.getElementById('f-income').value;
+    const spd  = +document.getElementById('f-spending').value;
+    const age  = +document.getElementById('f-age').value;
+    const freq = +document.getElementById('f-freq').value;
+    const mem  = +document.getElementById('f-mem').value;
+    const name = document.getElementById('f-name').value.trim()||'Customer '+nextManualId;
+    const gender=document.getElementById('f-gender').value;
+    const email= document.getElementById('f-email').value.trim();
+
+    const newCust={
+      id: 'MCUST_'+String(nextManualId++).padStart(3,'0'),
+      name, age, gender, income:inc, spending:spd, freq, mem, email,
+      manual:true, cluster:-1,
+    };
+    customers.push(newCust);
+    manualCount++;
+
+    // Re-cluster
+    clusterResult = reCluster();
+    updateAllCharts();
+    buildFilterDropdown();
+
+    const assignedCluster=newCust.cluster;
+    const sm=segmentMeta[assignedCluster];
+
+    // Show result
+    const res=document.getElementById('entry-result');
+    res.style.display='block';
+    res.style.borderColor=sm.color+'66';
+    res.style.background=sm.color+'10';
+    res.innerHTML=`
+      <h4 style="color:${sm.color}">${sm.icon} Assigned: ${sm.name} (Cluster ${assignedCluster})</h4>
+      <p>${name} · Age ${age} · ${gender} · ₹${inc}k income · Spending score ${spd}</p>
+      <p class="tip" style="margin-top:.6rem;color:var(--accent3)"><strong>💡 Strategy:</strong> ${sm.tip}</p>
+    `;
+    res.scrollIntoView({behavior:'smooth',block:'nearest'});
+
+    btn.innerHTML='🚀 Add &amp; Cluster';
+    btn.disabled=false;
+    showToast(`${name} added to ${sm.name} segment!`,'success');
+  }, 400);
+}
+
+function resetForm(){
+  ['f-name','f-email'].forEach(id=>document.getElementById(id).value='');
+  ['f-age','f-freq','f-mem'].forEach(id=>{ const el=document.getElementById(id); el.value=''; el.classList.remove('error'); });
+  document.getElementById('f-gender').value='';
+  document.getElementById('f-income').value=60;
+  document.getElementById('f-spending').value=50;
+  document.getElementById('rv-income').textContent=60;
+  document.getElementById('rv-spending').textContent=50;
+  document.getElementById('entry-result').style.display='none';
+  document.getElementById('live-preview').innerHTML=
+    '<strong style="color:var(--accent2)">🤖 Live Prediction:</strong> Adjust sliders to see predicted segment…';
+}
+
+/* ───────────────────────────────────────────────────────
+   DELETE CUSTOMER
+─────────────────────────────────────────────────────── */
+function deleteCustomer(id){
+  const idx=customers.findIndex(c=>c.id===id);
+  if(idx===-1) return;
+  const c=customers[idx];
+  if(!confirm(`Remove ${c.name} (${c.id})?`)) return;
+  customers.splice(idx,1);
+  manualCount--;
+  clusterResult=reCluster();
+  updateAllCharts();
+  buildFilterDropdown();
+  showToast(`${c.name} removed.`,'info');
+}
+
+/* ───────────────────────────────────────────────────────
+   EXPORT CSV
+─────────────────────────────────────────────────────── */
+function exportCSV(){
+  const header='Customer_ID,Name,Age,Gender,Annual_Income_k,Spending_Score,Purchase_Freq,Membership_Years,Email,Cluster,Segment,Source\n';
+  const rows=customers.map(c=>{
+    const sm=segmentMeta[c.cluster];
+    return [c.id,`"${c.name}"`,c.age,c.gender,c.income,c.spending,c.freq,c.mem,
+            `"${c.email||''}"`,c.cluster,`"${sm?sm.name:''}"`,c.manual?'Manual':'Auto'].join(',');
+  }).join('\n');
+  const blob=new Blob([header+rows],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url;
+  a.download='customer_segments_export.csv'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exported!','success');
+}
+
+/* ───────────────────────────────────────────────────────
+   TOAST
+─────────────────────────────────────────────────────── */
+let toastTimer;
+function showToast(msg,type='info'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='show '+type;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{ t.className=''; },3200);
+}
+
+/* ───────────────────────────────────────────────────────
+   TABS
+─────────────────────────────────────────────────────── */
+function switchTab(name,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  btn.classList.add('active');
+}
+
+/* ───────────────────────────────────────────────────────
+   BOOT
+─────────────────────────────────────────────────────── */
+(function init(){
+  initCharts();
+  showToast('🤖 Running initial K-Means clustering…','info');
+
+  setTimeout(()=>{
+    precomputeElbow();
+    clusterResult=reCluster();
+    buildFilterDropdown();
+    updateAllCharts();
+    showToast('✅ Model ready! 300 customers clustered.','success');
+  }, 300);
+})();
+</script>
+</body>
+</html>
